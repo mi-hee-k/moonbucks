@@ -1,29 +1,34 @@
-// TODO localStorage Read & Write
-// -[o]localStorage에 데이터를 저장한다.
-//  -[o] 메뉴를 추가할 때
-//  -[o] 메뉴를 수정할 때
-//  -[o] 메뉴를 삭제할 때
-// -[o]새로고침해도 데이터가 남아있게 한다.
+// TODO 서버 요청 부분
+// - [o] 웹 서버를 띄운다.
+// - [o] 서버에 새로운 메뉴명이 추가될 수 있도록 요청한다.
+// - [o] 서버에 카테고리별 메뉴리스트를 불러온다.
+// - [o] 서버에 메뉴가 수정될 수 있도록 요청한다.
+// - [o] 서버에 메뉴의 품절상태를 토글될 수 있도록 요청한다.
+// - [] 서버에 메뉴가 삭제될 수 있도록 요청한다.
 
-// 메뉴판 관리
-// -[o]에스프레소 메뉴판관리
-// -[o]프라푸치노 메뉴판관리
-// -[o]블렌디드 메뉴판관리
-// -[o]티바나 메뉴판관리
-// -[o]디저트 메뉴판관리
+// 리팩터링 부분
+// - [o] localStorage에 저장하는 로직은 지운다.
+// - [o] fetch 비동기 api를 사용하는 부분을 async await을 사용하여 구현한다.
 
-// TODO 페이지 접근시 최로 데이터 Read R Rendering
-// -[o]페이지에 최초로 로딩될 때 localStorage에 에스프레소 메뉴를 읽어온다.
-// -[o]에스프레소 메뉴를 페이지에 그려준다.
+// TODO 사용자 경험
+// - [o] API 통신이 실패하는 경우에 대해 사용자가 알 수 있게 alert으로 예외처리를 진행한다.
+// - [o] 중복되는 메뉴는 추가할 수 없다.
 
-// 품절
-// -[o]품절 버튼을 추가한다.
-// -[o]품절 커튼을 클릭하면 localStorage에 상태값이 저장된다.
-// -[o]품절 해당 메뉴의 상태값이 페이지에 그려진다.
-// -[o]클릭이벤트에서 가장 가까운 li태그의 class 속성 값이 sold-out을 추가한다.
+// 회고
+// 1. 웹서버 띄우기
+// 2. BASE_URL 웹 서버 변수 선언
+// 3. 비동기 처리하는데 해당하는 부분이 어디인지 확인하고 웹서버에 요청하게끔 코드 짜기
+// 4. 서버에 요청한 후 데이터를 받아서 화면에 렌더링 하기
+// 5. 리팩터링
+// - API 파일 따로 만들기
+// - 페이지 렌더링과 관련해서 중복되는 부분들 제거
+// - 서버요청 할 때 option 객체
+// - 카테고리 버튼 클릭 시 콜백함수 분리
+// 6. 사용자 경험 부분
 
 import { $ } from "./utils/dom.js";
 import store from "./store/index.js";
+import menuApi from "./api/index.js";
 
 function App() {
   this.menu = {
@@ -34,21 +39,26 @@ function App() {
     desert: [],
   };
   this.currentCategory = "espresso";
-  this.init = () => {
-    if (store.getLocalStorage()) {
-      this.menu = store.getLocalStorage();
-    }
+  this.init = async () => {
+    this.menu[this.currentCategory] = await menuApi.getAllMenuByCategory(
+      this.currentCategory
+    );
     render();
     initEventListeners();
   };
 
-  const render = () => {
+  const render = async () => {
+    this.menu[this.currentCategory] = await menuApi.getAllMenuByCategory(
+      this.currentCategory
+    );
     const template = this.menu[this.currentCategory]
-      .map((menuItem, index) => {
+      .map((menuItem) => {
         return `
-        <li data-menu-id="${index}" class="menu-list-item d-flex items-center py-2">
+        <li data-menu-id="${
+          menuItem.id
+        }" class="menu-list-item d-flex items-center py-2">
         <span class="w-100 pl-2 menu-name ${
-          menuItem.soldOut ? "sold-out" : ""
+          menuItem.isSoldOut ? "sold-out" : ""
         }">${menuItem.name}</span>
         <button
           type="button"
@@ -81,42 +91,57 @@ function App() {
     $(".menu-count").innerText = `총 ${menuCount}개`;
   };
 
-  const addMenuName = () => {
+  const addMenuName = async () => {
     if ($("#menu-name").value === "") {
       alert("값을 입력해주세요");
       return;
     }
+
+    const duplicatedItem = this.menu[this.currentCategory].find(
+      (menuItem) => menuItem.name === $("#menu-name").value
+    );
+    if (duplicatedItem) {
+      alert("이미 등록된 메뉴입니다. 다시 입력해주세요.");
+      $("#menu-name").value = "";
+      return;
+    }
+
     const menuName = $("#menu-name").value;
-    this.menu[this.currentCategory].push({ name: menuName });
-    store.setLocalStorage(this.menu);
+    await menuApi.createMenu(this.currentCategory, menuName);
     render();
     $("#menu-name").value = "";
   };
 
-  const updateMenuName = (e) => {
+  const updateMenuName = async (e) => {
     const menuId = e.target.closest("li").dataset.menuId;
     const $menuName = e.target.closest("li").querySelector(".menu-name");
     const updatedMenuName = prompt("메뉴명을 수정하세요", $menuName.innerText);
-    this.menu[this.currentCategory][menuId].name = updatedMenuName;
-    store.setLocalStorage(this.menu);
+    await menuApi.updateMenu(this.currentCategory, updatedMenuName, menuId);
     render();
   };
 
-  const removeMenuName = (e) => {
+  const removeMenuName = async (e) => {
     if (confirm("정말 삭제하시겠습니까?")) {
       const menuId = e.target.closest("li").dataset.menuId;
-      this.menu[this.currentCategory].splice(menuId, 1);
-      store.setLocalStorage(this.menu);
+      await menuApi.deleteMenu(this.currentCategory, menuId);
       render();
     }
   };
 
-  const soldOutMenu = (e) => {
+  const soldOutMenu = async (e) => {
     const menuId = e.target.closest("li").dataset.menuId;
-    this.menu[this.currentCategory][menuId].soldOut =
-      !this.menu[this.currentCategory][menuId].soldOut;
-    store.setLocalStorage(this.menu);
+    await menuApi.toggleSoldoutMenu(this.currentCategory, menuId);
     render();
+  };
+
+  const changeCategory = (e) => {
+    const isCategoryButton = e.target.classList.contains("cafe-category-name");
+    if (isCategoryButton) {
+      const categoryName = e.target.dataset.categoryName;
+      this.currentCategory = categoryName;
+      $("#category-title").innerText = `${e.target.innerText} 메뉴 관리`;
+      render();
+    }
   };
 
   $("#menu-list").addEventListener("click", (e) => {
@@ -150,16 +175,7 @@ function App() {
       addMenuName();
     });
 
-    $("nav").addEventListener("click", (e) => {
-      const isCategoryButton =
-        e.target.classList.contains("cafe-category-name");
-      if (isCategoryButton) {
-        const categoryName = e.target.dataset.categoryName;
-        this.currentCategory = categoryName;
-        $("#category-title").innerText = `${e.target.innerText} 메뉴 관리`;
-        render();
-      }
-    });
+    $("nav").addEventListener("click", changeCategory);
   };
 }
 
